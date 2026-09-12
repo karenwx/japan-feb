@@ -1,0 +1,8 @@
+node_modules/
+.wrangler/
+.wrangler-dryrun*
+.dev.vars
+.DS_Store
+.claude/
+.agents/
+_to_delete_node_modules/

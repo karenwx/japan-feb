@@ -1,0 +1,66 @@
+# Copied from karenwang-infra/ci-templates/test.yml @ 2e1993b
+# karenwang-infra canonical PR / branch test gate. Copy to .github/workflows/test.yml
+# in each project repo (npm variant; see ci-templates/bun/test.yml for bun projects).
+#
+# Runs on pull requests into main or develop, and on pushes to any non-deploy branch.
+# deploy.yml handles the test gate on main/develop pushes; this file keeps feature
+# branches honest before they reach a PR.
+
+name: test
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches-ignore: [main, develop]
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Routing contract — prod wrangler top-level unchanged
+        run: |
+          WRANGLER=wrangler.toml
+          [ -f wrangler.jsonc ] && WRANGLER=wrangler.jsonc
+          if ! git cat-file -e origin/main:$WRANGLER 2>/dev/null; then
+            echo "no $WRANGLER on origin/main yet — skipping"
+            exit 0
+          fi
+          PATTERN='^(name|routes|\[\[routes\]\]|pattern|custom_domain|zone_name|workers_dev)'
+          A=$(git show origin/main:$WRANGLER | awk '/^\[env\./{exit} {print}' | grep -E "$PATTERN" || true)
+          B=$(awk '/^\[env\./{exit} {print}' "$WRANGLER" | grep -E "$PATTERN" || true)
+          if [ "$A" != "$B" ]; then
+            echo "ERROR: production routing/name in $WRANGLER drifted from origin/main"
+            diff <(printf '%s\n' "$A") <(printf '%s\n' "$B") || true
+            exit 1
+          fi
+          echo "Routing contract OK."
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint --if-present
+
+      - name: Typecheck
+        run: |
+          if [ -f tsconfig.json ]; then
+            npx tsc --noEmit
+          else
+            echo "no tsconfig.json — skipping typecheck"
+          fi
+
+      - name: Unit tests (required)
+        run: npm test

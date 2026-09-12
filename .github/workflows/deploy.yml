@@ -1,0 +1,155 @@
+# Copied from karenwang-infra/ci-templates/deploy.yml @ 2e1993b
+# karenwang-infra canonical deploy workflow. Copy to .github/workflows/deploy.yml
+# in each project repo and add a provenance line at the top noting the source SHA.
+#
+# Two environments:
+#   push to main    -> production (routes on karenwang.org, unchanged)
+#   push to develop -> preview    (<name>-dev.<WORKERS_SUBDOMAIN>, *.workers.dev only)
+#
+# Required repo secrets:   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+# Required repo variables: BASE_PATH (e.g. "/projects/bloom"), WORKERS_SUBDOMAIN (e.g. "weixuan1994.workers.dev")
+
+name: deploy
+
+on:
+  push:
+    branches: [main, develop]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.gitignore'
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Routing contract — prod wrangler top-level unchanged (develop branch only)
+        if: github.ref == 'refs/heads/develop'
+        run: |
+          WRANGLER=wrangler.toml
+          [ -f wrangler.jsonc ] && WRANGLER=wrangler.jsonc
+          if ! git cat-file -e origin/main:$WRANGLER 2>/dev/null; then
+            echo "no $WRANGLER on origin/main yet — skipping routing contract check"
+            exit 0
+          fi
+          PATTERN='^(name|routes|\[\[routes\]\]|pattern|custom_domain|zone_name|workers_dev)'
+          A=$(git show origin/main:$WRANGLER | awk '/^\[env\./{exit} {print}' | grep -E "$PATTERN" || true)
+          B=$(awk '/^\[env\./{exit} {print}' "$WRANGLER" | grep -E "$PATTERN" || true)
+          if [ "$A" != "$B" ]; then
+            echo "ERROR: production routing/name in $WRANGLER drifted from origin/main"
+            diff <(printf '%s\n' "$A") <(printf '%s\n' "$B") || true
+            exit 1
+          fi
+          echo "Routing contract OK."
+
+      - name: Verify BASE_PATH matches wrangler config (production only)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          if [ -f wrangler.toml ]; then
+            WRANGLER_BASE=$(grep -E '^BASE_PATH\s*=' wrangler.toml | head -1 | sed -E 's/BASE_PATH\s*=\s*"(.*)"/\1/')
+          elif [ -f wrangler.jsonc ]; then
+            WRANGLER_BASE=$(grep -oE '"BASE_PATH"\s*:\s*"[^"]*"' wrangler.jsonc | head -1 | sed -E 's/"BASE_PATH"\s*:\s*"(.*)"/\1/')
+          else
+            echo "ERROR: no wrangler.toml or wrangler.jsonc at repo root"
+            exit 1
+          fi
+          if [ "$WRANGLER_BASE" != "${{ vars.BASE_PATH }}" ]; then
+            echo "ERROR: BASE_PATH drift detected."
+            echo "wrangler says: '$WRANGLER_BASE'"
+            echo "GitHub Actions var says: '${{ vars.BASE_PATH }}'"
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint --if-present
+
+      - name: Typecheck
+        run: |
+          if [ -f tsconfig.json ]; then
+            npx tsc --noEmit
+          else
+            echo "no tsconfig.json — skipping typecheck"
+          fi
+
+      - name: Unit tests (required)
+        run: npm test
+
+      - name: Deploy (production)
+        if: github.ref == 'refs/heads/main'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.82.0'
+          command: deploy
+
+      - name: Deploy (develop preview)
+        if: github.ref == 'refs/heads/develop'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.82.0'
+          command: deploy --env develop
+
+      - name: Post-deploy healthz (production)
+        if: github.ref == 'refs/heads/main'
+        env:
+          BASE_PATH: ${{ vars.BASE_PATH }}
+          HEALTHZ_URL: ${{ vars.HEALTHZ_URL }}
+        run: |
+          sleep 5
+          # HEALTHZ_URL override wins (for custom_domain / non-karenwang.org / workers.dev-only Workers).
+          URL="${HEALTHZ_URL:-https://karenwang.org${BASE_PATH}/healthz}"
+          echo "Smoke-testing: $URL"
+          BODY=$(curl -fsS --max-time 10 "$URL")
+          echo "$BODY"
+          echo "$BODY" | grep -q '"ok":true'
+
+      - name: Post-deploy healthz (develop preview)
+        if: github.ref == 'refs/heads/develop'
+        env:
+          WORKER_NAME_PROD: ${{ vars.WORKER_NAME }}
+          WORKERS_SUBDOMAIN: ${{ vars.WORKERS_SUBDOMAIN }}
+        run: |
+          sleep 5
+          # WORKER_NAME is the production Worker name; preview suffixes "-dev".
+          URL="https://${WORKER_NAME_PROD}-dev.${WORKERS_SUBDOMAIN}/healthz"
+          echo "Smoke-testing: $URL"
+          BODY=$(curl -fsS --max-time 10 "$URL")
+          echo "$BODY"
+          echo "$BODY" | grep -q '"ok":true'
+
+      - name: Post-deploy trailing-slash check (production, karenwang.org projects only)
+        if: github.ref == 'refs/heads/main' && vars.BASE_PATH != ''
+        env:
+          BASE_PATH: ${{ vars.BASE_PATH }}
+        run: |
+          URL_BARE="https://karenwang.org${BASE_PATH}"
+          URL_SLASH="https://karenwang.org${BASE_PATH}/"
+          STATUS_BARE=$(curl -o /dev/null -s -w "%{http_code}" "$URL_BARE")
+          STATUS_SLASH=$(curl -o /dev/null -s -w "%{http_code}" -I "$URL_SLASH")
+          echo "bare: $STATUS_BARE  slash: $STATUS_SLASH"
+          if [ "$STATUS_BARE" != "200" ] && [ "$STATUS_BARE" != "401" ] && [ "$STATUS_BARE" != "403" ]; then
+            echo "bare path did not return 200/401/403"
+            exit 1
+          fi
+          if [ "$STATUS_SLASH" != "308" ] && [ "$STATUS_SLASH" != "301" ]; then
+            echo "trailing-slash did not redirect"
+            exit 1
+          fi

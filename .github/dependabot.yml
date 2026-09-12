@@ -1,0 +1,22 @@
+# Copied from karenwang-infra/ci-templates/dependabot.yml @ 2e1993b
+# karenwang-infra canonical Dependabot config. Copy to .github/dependabot.yml
+# in each project repo. For monorepos with multiple package.json files (e.g.
+# health-tracker with worker/ + frontend-worker/, globalpulse with apps/*),
+# duplicate the npm entry per directory.
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      all-deps:
+        patterns: ["*"]
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

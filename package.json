@@ -1,0 +1,16 @@
+{
+  "name": "japan-feb",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Kansai in February — Karen's Kyoto & Osaka picks, deployed at karenwang.org/projects/japan-feb.",
+  "scripts": {
+    "dev": "npx wrangler dev",
+    "deploy": "npx wrangler deploy",
+    "deploy:develop": "npx wrangler deploy --env develop",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "4.1.8",
+    "wrangler": "4.97.0"
+  }
+}

@@ -1,0 +1,24 @@
+# Copied from karenwang-infra/ci-templates/audit.yml @ 2e1993b
+# karenwang-infra canonical weekly CVE audit. Copy to .github/workflows/audit.yml
+# in each project repo. Fails loud if a high/critical vulnerability is present
+# so GitHub emails on red. Dependabot (see dependabot.yml) handles the PRs.
+
+name: audit
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'   # Monday 09:00 UTC
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: npm audit (fail on high+)
+        run: npm audit --audit-level=high
