@@ -1,5 +1,29 @@
 # TODO — publish japan-feb (run with Codex from a terminal that has gh + wrangler auth)
 
+## Completed — 2026-09-12
+
+- Public repo: https://github.com/karenwx/japan-feb
+- Live guide: https://karenwang.org/projects/japan-feb
+- Successful production CI run: https://github.com/karenwx/japan-feb/actions/runs/34714554461
+- Both CI secrets and all three variables are configured. A dedicated Cloudflare
+  token has Workers Scripts edit and Account Settings read access on the deployment
+  account, plus Workers Routes edit access on `karenwang.org`.
+- Added `workflow_dispatch` for manual deployment runs.
+- With the user's approval, replaced the two route patterns with
+  `karenwang.org/projects/japan-feb*`. The original exact route served the Projects
+  landing page when a query string was present. Worker name and BASE_PATH are unchanged.
+- All three unit tests and the dry-run build passed. Live results: health service
+  `japan-feb`; cache-busted page `200` with the correct guide title; trailing slash
+  `308` to the canonical URL; manifest `200`; title phrase matched two lines.
+- Browser checks at 390 × 844 passed: cover, Kyoto/Osaka navigation, Eat/Stay,
+  List/Map, cuisine chips, and the hotel ¥ filter. Cover, restaurant, and hotel
+  photos checked rendered correctly. This was viewport emulation, not a physical phone.
+- Added japan-feb to `karenwang-infra/ROUTING.md` (commit `3818486`). No standalone
+  AGENT-INSTRUCTIONS inventory was found under `~/Downloads/projects`; the historical
+  instruction-audit report was left unchanged.
+
+The original publishing checklist follows for reference.
+
 Goal: ship this repo live at https://karenwang.org/projects/japan-feb using the
 karenwang.org mesh workflow (same as `../cc-learning` / `cc-beginner`).
 

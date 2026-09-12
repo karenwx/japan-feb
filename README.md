@@ -3,6 +3,8 @@
 A single-page guide (where to eat, where to sleep, with a map view) served by a
 Cloudflare Worker at **https://karenwang.org/projects/japan-feb**.
 
+Routing registry: [karenwang.org master routing map](https://github.com/karenwx/karenwang-infra/blob/main/ROUTING.md).
+
 Same structure and conventions as the other `karenwang.org/projects/*` Workers
 (cloned from `cc-beginner`, minus the chat API).
 
