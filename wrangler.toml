@@ -4,8 +4,7 @@ compatibility_date = "2025-05-01"
 workers_dev = true
 
 routes = [
-  { pattern = "karenwang.org/projects/japan-feb", zone_name = "karenwang.org" },
-  { pattern = "karenwang.org/projects/japan-feb/*", zone_name = "karenwang.org" }
+  { pattern = "karenwang.org/projects/japan-feb*", zone_name = "karenwang.org" }
 ]
 
 # Bundle the page, manifest, and icon into the Worker as text modules
